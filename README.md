@@ -82,7 +82,6 @@ Redis (Upstash)
   - Room becomes inaccessible
   - Users are redirected
 
----
 
 ## 🚀 Getting Started
 
@@ -91,25 +90,40 @@ Redis (Upstash)
 ```bash
 git clone https://github.com/sr2808/realtime-private-chat-app.git
 cd realtime-private-chat-app
+```
 
+---
 
-2️⃣ Install dependencies
+### 2️⃣ Install dependencies
+
+```bash
 npm install
+```
 
-3️⃣ Configure environment variables
+---
 
-Create a .env.local file:
+### 3️⃣ Configure environment variables
 
+Create a `.env.local` file in the project root:
+
+```env
 UPSTASH_REDIS_REST_URL=your_redis_url
 UPSTASH_REDIS_REST_TOKEN=your_redis_token
+```
 
+You can get these credentials from:
+👉 [https://upstash.com](https://upstash.com)
 
-You can get these from:
-https://upstash.com
+---
 
-4️⃣ Run locally
+### 4️⃣ Run the development server
+
+```bash
 npm run dev
+```
 
+Open the app in your browser:
+👉 **[http://localhost:3000](http://localhost:3000)**
 
-Open:
-http://localhost:3000
+---
+

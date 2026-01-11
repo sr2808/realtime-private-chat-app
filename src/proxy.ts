@@ -1,37 +1,51 @@
 import { NextRequest, NextResponse } from "next/server"
 import { redis } from "./lib/redis"
+import { nanoid } from "nanoid"
 
 export const proxy = async (req: NextRequest) => {
   const pathname = req.nextUrl.pathname
 
-  // Only protect /room/:roomId routes
   const roomMatch = pathname.match(/^\/room\/([^/]+)$/)
-  if (!roomMatch) {
-    return NextResponse.redirect(new URL("/", req.url))
-  }
+  if (!roomMatch) return NextResponse.redirect(new URL("/", req.url))
 
   const roomId = roomMatch[1]
 
-  // Fetch room metadata
-  const meta = await redis.hgetall<{ connected?: string[] }>(
+  const meta = await redis.hgetall<{ connected: string[]; createdAt: number }>(
     `meta:${roomId}`
   )
 
-  // Room does not exist
-  if (!meta || !Array.isArray(meta.connected)) {
-    return NextResponse.redirect(
-      new URL("/?error=room-not-found", req.url)
-    )
+  if (!meta) {
+    return NextResponse.redirect(new URL("/?error=room-not-found", req.url))
   }
 
-  /**
-   * IMPORTANT:
-   * - Do NOT assign tokens here
-   * - Do NOT mutate Redis
-   * - Joining happens via explicit API call (/api/room/join)
-   */
+  const existingToken = req.cookies.get("x-auth-token")?.value
 
-  return NextResponse.next()
+  // USER IS ALLOWED TO JOIN ROOM
+  if (existingToken && meta.connected.includes(existingToken)) {
+    return NextResponse.next()
+  }
+
+  // USER IS NOT ALLOWED TO JOIN
+  if (meta.connected.length >= 2) {
+    return NextResponse.redirect(new URL("/?error=room-full", req.url))
+  }
+
+  const response = NextResponse.next()
+
+  const token = nanoid()
+
+  response.cookies.set("x-auth-token", token, {
+    path: "/",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "strict",
+  })
+
+  await redis.hset(`meta:${roomId}`, {
+    connected: [...meta.connected, token],
+  })
+
+  return response
 }
 
 export const config = {

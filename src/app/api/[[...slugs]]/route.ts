@@ -1,3 +1,4 @@
+// src/app/api/[[...slugs]]/route.ts
 import { redis } from "@/lib/redis"
 import { Elysia, t } from "elysia"
 import { nanoid } from "nanoid"
@@ -5,7 +6,7 @@ import { authMiddleware } from "./auth"
 import { z } from "zod"
 import { Message, realtime } from "@/lib/realtime"
 
-const ROOM_TTL_SECONDS =60 * 10
+const ROOM_TTL_SECONDS = 60 * 10
 
 const rooms = new Elysia({ prefix: "/room" })
   .post("/create", async () => {
@@ -25,6 +26,14 @@ const rooms = new Elysia({ prefix: "/room" })
     "/ttl",
     async ({ auth }) => {
       const ttl = await redis.ttl(`meta:${auth.roomId}`)
+      
+      // Update activity when checking TTL
+      await redis.setex(
+        `activity:${auth.roomId}:${auth.token}`, 
+        120, // 2 min TTL
+        Date.now()
+      )
+      
       return { ttl: ttl > 0 ? ttl : 0 }
     },
     { query: z.object({ roomId: z.string() }) }
@@ -34,10 +43,16 @@ const rooms = new Elysia({ prefix: "/room" })
     async ({ auth }) => {
       await realtime.channel(auth.roomId).emit("chat.destroy", { isDestroyed: true })
 
+      // Clean up all room-related data including activity trackers
+      const activityKeys = auth.connected.map(
+        (token) => `activity:${auth.roomId}:${token}`
+      )
+
       await Promise.all([
         redis.del(auth.roomId),
         redis.del(`meta:${auth.roomId}`),
         redis.del(`messages:${auth.roomId}`),
+        ...activityKeys.map((key) => redis.del(key)),
       ])
     },
     { query: z.object({ roomId: z.string() }) }
@@ -65,6 +80,13 @@ const messages = new Elysia({ prefix: "/messages" })
         roomId,
       }
 
+      // Update user activity when sending message
+      await redis.setex(
+        `activity:${roomId}:${auth.token}`, 
+        120, // 2 min TTL
+        Date.now()
+      )
+
       // add message to history
       await redis.rpush(`messages:${roomId}`, { ...message, token: auth.token })
       await realtime.channel(roomId).emit("chat.message", message)
@@ -87,6 +109,13 @@ const messages = new Elysia({ prefix: "/messages" })
   .get(
     "/",
     async ({ auth }) => {
+      // Update user activity when fetching messages
+      await redis.setex(
+        `activity:${auth.roomId}:${auth.token}`, 
+        120, // 2 min TTL
+        Date.now()
+      )
+
       const messages = await redis.lrange<Message>(`messages:${auth.roomId}`, 0, -1)
 
       return {
